@@ -1,3 +1,8 @@
--e git://github.com/xudd/xudd.git@8c756e71f34261b9799c8b41279a350d74f2de3d#egg=XUDD-dev
+PyYAML==3.10
+-e git://github.com/xudd/xudd.git@dcb4fae88c9cbca065cafa004e5dffec70ca43c6#egg=XUDD-dev
+argh==0.23.3
 distribute==0.6.34
-hy==0.9.10
+-e git://github.com/hylang/hy.git@7a403a2660e477196986c4d8c8cfc27330eb6f13#egg=hy-dev
+pathtools==0.1.2
+rply==0.6.1
+watchdog==0.6.0

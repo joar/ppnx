@@ -1,7 +1,7 @@
 (import [random])
 
 (defn trigger [context]
-  (if (is-not context.params.trailing None)
+  (if (not (none? context.params.trailing))
     (= (slice context.params.trailing 0 5) "!fate")))
 
 (setv DICE_REPR {
