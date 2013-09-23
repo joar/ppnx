@@ -68,13 +68,19 @@ class IRCBot(Actor):
         self.watcher_id = None
 
     def reload_module(self, message):
+        # TODO:
+        # 01:32:30 < paultag> it might also break when you have something
+        # ref'ing the existing object
+        #
+        # Also, try not having threads in the mix, use
+        # https://github.com/seb-m/pyinotify
         path = message.body.get('path')
         name, ext = os.path.splitext(os.path.basename(path))
 
         name = self.namespace_module(str(name))
 
         if any(name == i.__name__ for i in self.modules):
-            sys.modules.pop(name)
+            del sys.modules[name]
             _log.info('reloading {0}'.format(name))
             self.modules.append(self.import_module(name, path))
         else:
@@ -118,7 +124,7 @@ class IRCBot(Actor):
 
     def handle_line(self, message):
         if not self.watcher_id:
-            if False:  # disabled
+            if True:  # NOT disabled
                 self.watcher_id = self.hive.create_actor(ModuleChangeWatcher)
                 self.send_message(
                     self.watcher_id,
