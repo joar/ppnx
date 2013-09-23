@@ -1,5 +1,9 @@
 import logging
 import random
+import os
+import hy
+import hy.importer
+import traceback
 
 from xudd.lib.tcp import Client
 from xudd.lib.irc import IRCClient
@@ -8,6 +12,10 @@ from xudd.actor import Actor
 
 _log = logging.getLogger(__name__)
 
+class Context(object):
+    def __init__(self, **kw):
+        for k, v in kw.items():
+            setattr(self, k, v)
 
 class IRCBot(Actor):
     def __init__(self, hive, id,
@@ -26,44 +34,52 @@ class IRCBot(Actor):
             'handle_login': self.handle_login,
             'handle_line': self.handle_line,
         })
+        self.modules = []
+        self.module_directory = 'modules'
+
+        self.load_modules()
+
+    def load_modules(self):
+        for f in os.listdir(self.module_directory):
+            name, ext = os.path.splitext(f)
+            self.modules.append(
+                hy.importer.import_file_to_module(
+                    name,
+                    os.path.join(
+                        self.module_directory,
+                        f)))
 
     def handle_line(self, message):
-        msg = message.body['message']
         command = message.body['command']
         params = message.body['params']
         prefix = message.body['prefix']
 
-        if 'PING' == command:
-            return message.reply(body={'line': 'PONG'})
-        elif 'PRIVMSG' == command:
-            if params.middle.startswith('#'):
-                in_channel = True
-                via = params.middle
-            else:
-                via = prefix.nick
+        context = Context(
+            command=command,
+            params=params,
+            prefix=prefix)
 
-            text = params.trailing
+        in_channel = params.middle and params.middle[0] == '#'
 
-            if text[0:5] == '!fate':
-                DICE_REPR = {-1: '[-]', 0: '[_]', 1: '[+]'}
-                result = []
-                for i in range(4):
-                    result.append(random.randrange(-1, 2))
+        for module in self.modules:
+            try:
+                if module.trigger(context):
+                    result = module.act(context)
 
-                reply = ' '.join([DICE_REPR.get(i, 'ERR') for i in result])
-                reply += ' => {0}'.format(sum(result))
-                message.reply(
-                    body={
-                    'line': u'PRIVMSG {0} :{1}'.format(
-                        via, reply)
-                })
+                    # Simply send the result as a message to the sender/channel
+                    if isinstance(result, (str, bytes)):
+                        line = 'PRIVMSG {0} :{1}'.format(
+                            params.middle if in_channel else prefix.nick,
+                            result)
+                    # Assemble the line from a tuple
+                    elif isinstance(result, (tuple, list)):
+                        line = ' '.join(result)
 
-            elif params.middle == self.nick:
-                message.reply(
-                    body={
-                    'line': u'PRIVMSG {0} :{1}'.format(
-                        via, text)
-                })
+                    message.reply(body={
+                        'line': line
+                    })
+            except Exception as exc:
+                _log.critical(traceback.format_exc())
 
     def handle_login(self, message):
         _log.info('Logging in')
