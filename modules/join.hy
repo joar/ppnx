@@ -5,4 +5,4 @@
     (= (slice context.params.trailing 0 5) "!join")))
 
 (defn act [context]
-  (, "JOIN" (slice context.params.trailing 5)))
+  (, "JOIN" (slice context.params.trailing 6)))
