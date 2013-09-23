@@ -44,7 +44,7 @@ class IRCBot(Actor):
             name, ext = os.path.splitext(f)
             self.modules.append(
                 hy.importer.import_file_to_module(
-                    name,
+                    '.'.join(['ppnx.modules', name]),
                     os.path.join(
                         self.module_directory,
                         f)))
