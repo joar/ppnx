@@ -6,8 +6,12 @@ import traceback
 import imp
 import importlib
 
+from functools import wraps
+
 import hy
 import hy.importer
+
+import pyinotify
 
 # Watchdog is installed from git at the moment because of
 # https://github.com/gorakhargosh/watchdog/issues/125
@@ -26,6 +30,7 @@ class Context(object):
         for k, v in kw.items():
             setattr(self, k, v)
 
+
 class IRCBot(Actor):
     def __init__(self, hive, id,
                  administrator_nicknames=None,
@@ -43,9 +48,10 @@ class IRCBot(Actor):
             'handle_login': self.handle_login,
             'handle_line': self.handle_line,
             'reload_module': self.reload_module,
+            'on_authenticated': self.on_authenticated,
         })
 
-        self.modules = []
+        self.modules = {}
         self.module_directory = module_directory
 
         self.load_modules()
@@ -77,24 +83,34 @@ class IRCBot(Actor):
         path = message.body.get('path')
         name, ext = os.path.splitext(os.path.basename(path))
 
-        name = self.namespace_module(str(name))
+        try:
+            if name in self.modules:
+                _log.info('reloading {0}'.format(name))
+            else:
+                _log.info('importing {0}'.format(name))
 
-        if any(name == i.__name__ for i in self.modules):
-            del sys.modules[name]
-            _log.info('reloading {0}'.format(name))
-            self.modules.append(self.import_module(name, path))
-        else:
-            _log.info('importing {0}'.format(name))
-            self.modules.append(self.import_module(name, path))
+            self.import_module(name, path)
+        except Exception as exc:
+            _log.critical('Error while (re)loading: {0}'.format(
+                traceback.format_exc()
+            ))
+
+    def on_authenticated(self, message):
+        _log.debug('on_authenticated')
 
     def import_module(self, name, path):
-        return hy.importer.import_file_to_module(
-            name,
+        module = hy.importer.import_file_to_module(
+            self.namespace_module(name),
             path)
 
+        self.modules.update({
+            name: module
+        })
+
+        return module
+
     def namespace_module(self, module_name):
-        return '{0}.modules.{1}'.format(
-            __name__,
+        return 'ppnx_modules.{0}'.format(
             module_name)
 
     def load_modules(self):
@@ -107,25 +123,26 @@ class IRCBot(Actor):
             if not ext == '.hy':
                 continue
 
-            name = self.namespace_module(name)
             path = os.path.join(
                 self.module_directory,
                 str(f))
 
             mod = self.import_module(name, path)
 
-            if hasattr(mod, 'trigger'):
-                self.modules.append(mod)
-                _log.info('Loaded {0}'.format(name))
-            else:
+            if not hasattr(mod, 'trigger'):
+                self.modules.pop(name)
                 _log.error('{0} does not have a \'trigger\' method'.format(
                     name
                 ))
 
+            _log.info('Loaded {0}'.format(name))
+
     def handle_line(self, message):
         if not self.watcher_id:
             if True:  # NOT disabled
-                self.watcher_id = self.hive.create_actor(ModuleChangeWatcher)
+                self.watcher_id = self.hive.create_actor(
+                    ModuleChangeWatcher,
+                    id='watcher')
                 self.send_message(
                     self.watcher_id,
                     'watch',
@@ -146,7 +163,7 @@ class IRCBot(Actor):
             is_admin=is_admin,
             in_channel=in_channel)
 
-        for module in self.modules:
+        for name, module in self.modules.items():
             try:
                 if module.trigger(context):
                     result = module.act(context)
@@ -184,7 +201,28 @@ class IRCBot(Actor):
                 'lines': lines
             })
 
-class ModuleChangeWatcher(Actor, FileSystemEventHandler):
+
+def filter_filetype(func):
+    @wraps(func)
+    def wrapper(self, event, *args, **kw):
+        path = event.pathname
+        name, ext = os.path.splitext(os.path.basename(path))
+        ext_short = ext[1:] if len(ext) else None
+        included_exts = ['hy']
+
+        if not ext_short in included_exts:
+            _log.debug('{0} not in {1} ({2})'.format(
+                ext_short,
+                included_exts,
+                path))
+            return
+
+        return func(self, event, path, *args, **kw)
+
+    return wrapper
+
+
+class ModuleChangeWatcher(Actor, pyinotify.ProcessEvent):
     def __init__(self, hive, id):
         super(ModuleChangeWatcher, self).__init__(hive, id)
         self.message_routing = {
@@ -194,50 +232,62 @@ class ModuleChangeWatcher(Actor, FileSystemEventHandler):
         self.path = None
         self.observer = None
 
-    def on_created(self, event):
-        name, ext = os.path.splitext(os.path.basename(event.src_path))
-        if not ext == b'.hy':
-            return
-
-        _log.info('New module: {0}'.format(event.src_path))
+    @filter_filetype
+    def process_IN_CREATE(self, event, path):
+        _log.info('New module: {0}'.format(path))
 
         self.send_message(
             self.watching_for,
             'reload_module',
             body={
-                'path': event.src_path
+                'path': path
             }
         )
 
-    def on_modified(self, event):
-        name, ext = os.path.splitext(os.path.basename(event.src_path))
-        if not ext == b'.hy':
-            return
-
-        _log.debug('Modified: {0}'.format(event.src_path))
+    @filter_filetype
+    def process_IN_MODIFY(self, event, path):
+        _log.debug('Modified: {0}'.format(path))
 
         self.send_message(
             self.watching_for,
             'reload_module',
             body={
-                'path': event.src_path
+                'path': path
             }
         )
 
     def watch(self, message):
         self.watching_for = message.from_id
+        self.watch_manager = pyinotify.WatchManager()
+        watch_mask = \
+                pyinotify.IN_DELETE | pyinotify.IN_CREATE | pyinotify.IN_MODIFY
         self.path = message.body['path']
 
-        self.observer = Observer()
-        self.observer.schedule(self, path=self.path, recursive=True)
-        self.observer.start()
+        self.watch_manager.add_watch(self.path, watch_mask, rec=True)
+
+        notifier = pyinotify.Notifier(self.watch_manager, self, timeout=10)
 
         _log.info(u'Watching on behalf of {0} for changes in {1}'.format(
             self.watching_for,
             self.path))
 
+        while True:
+            if notifier._timeout is  None:
+                raise AssertionError('Notifier must have a timeout')
+
+            notifier.process_events()
+
+            while notifier.check_events():
+                _log.debug('Additional events found')
+                notifier.read_events()
+                notifier.process_events()
+
+            yield self.wait_on_self()
+
 def connect():
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(levelname)08s %(threadName)s %(name)s: %(message)s')
 
     hive = Hive()
 
