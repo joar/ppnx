@@ -1,6 +1,6 @@
 (defn trigger [context]
   (and
-    (= context.prefix.nick "joar")
+    context.is_admin
     context.params.trailing
     (= (slice context.params.trailing 0 5) "!join")))
 

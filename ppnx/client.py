@@ -13,11 +13,6 @@ import hy.importer
 
 import pyinotify
 
-# Watchdog is installed from git at the moment because of
-# https://github.com/gorakhargosh/watchdog/issues/125
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-
 from xudd.lib.tcp import Client
 from xudd.lib.irc import IRCClient
 from xudd.hive import Hive
@@ -296,7 +291,8 @@ def connect():
         module_directory=os.path.join(
             os.path.dirname(__file__),
             '..',
-            'modules'))
+            'modules'),
+        administrator_nicknames='joar,paroneayea')
     irc_id = hive.create_actor(IRCClient, id='irc', message_handler='bot')
     client_id = hive.create_actor(Client, id='tcp_client',
                                   chunk_handler=irc_id)
