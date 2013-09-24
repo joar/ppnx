@@ -14,14 +14,15 @@
     (result.group 1)))
 
 (defn act [context]
-  (setv issue-data
-    (.json
-        (http-get
-          (.format
-            "https://api.github.com/repos/{0}"
-            (get-issue-url context.params.trailing)))))
-  (.format
-    "({0}) #{1}: {2}"
-    (get issue-data "state")
-    (get issue-data "number")
-    (get issue-data "title")))
+  (let
+    [[
+      issue-data
+      (.json (http-get (.format
+          "https://api.github.com/repos/{0}"
+          (get-issue-url context.params.trailing))))
+    ]]
+    (.format
+      "({0}) #{1}: {2}"
+      (get issue-data "state")
+      (get issue-data "number")
+      (get issue-data "title"))))
