@@ -1,10 +1,6 @@
 import logging
-import random
 import os
-import sys
 import traceback
-import imp
-import importlib
 
 from functools import wraps
 
@@ -85,7 +81,7 @@ class IRCBot(Actor):
                 _log.info('importing {0}'.format(name))
 
             self.import_module(name, path)
-        except Exception as exc:
+        except Exception:
             _log.critical('Error while (re)loading: {0}'.format(
                 traceback.format_exc()
             ))
