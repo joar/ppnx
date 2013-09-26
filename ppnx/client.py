@@ -27,6 +27,7 @@ class IRCBot(Actor):
                  administrator_hosts=None,
                  autojoin_channels=None,
                  module_directory=None,
+                 autoreload=False,
                  **kw):
         super(IRCBot, self).__init__(hive, id)
 
@@ -41,6 +42,8 @@ class IRCBot(Actor):
             'reload_module': self.reload_module,
             'on_authenticated': self.on_authenticated,
         })
+
+        self.autoreload = autoreload
 
         self.modules = {}
         self.module_directory = module_directory
@@ -139,16 +142,15 @@ class IRCBot(Actor):
             _log.info('Loaded {0}'.format(name))
 
     def handle_line(self, message):
-        if not self.watcher_id:
-            if True:  # NOT disabled
-                self.watcher_id = self.hive.create_actor(
-                    ModuleChangeWatcher,
-                    id='watcher')
-                self.send_message(
-                    self.watcher_id,
-                    'watch',
-                    body={'path': self.module_directory}
-                )
+        if self.autoreload and not self.watcher_id:
+            self.watcher_id = self.hive.create_actor(
+                ModuleChangeWatcher,
+                id='watcher')
+            self.send_message(
+                self.watcher_id,
+                'watch',
+                body={'path': self.module_directory}
+            )
 
         command = message.body['command']
         params = message.body['params']
@@ -272,7 +274,7 @@ class ModuleChangeWatcher(Actor, pyinotify.ProcessEvent):
 
         self.watch_manager.add_watch(self.path, watch_mask, rec=True)
 
-        notifier = pyinotify.Notifier(self.watch_manager, self, timeout=10)
+        notifier = pyinotify.Notifier(self.watch_manager, self, timeout=1)
 
         _log.info(u'Watching on behalf of {0} for changes in {1}'.format(
             self.watching_for,
