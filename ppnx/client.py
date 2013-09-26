@@ -24,7 +24,7 @@ class Context(object):
 
 class IRCBot(Actor):
     def __init__(self, hive, id,
-                 administrator_nicknames=None,
+                 administrator_hosts=None,
                  autojoin_channels=None,
                  module_directory=None,
                  **kw):
@@ -33,7 +33,7 @@ class IRCBot(Actor):
         self.nick = kw.get('nick', 'ppnx')
         self.realname = kw.get('realname', 'xudd IRC bot')
         self.user = kw.get('user', 'ppnx')
-        self.password = kw.get('password')
+        self.password = kw.get('password', '')
 
         self.message_routing.update({
             'handle_login': self.handle_login,
@@ -47,11 +47,11 @@ class IRCBot(Actor):
 
         self.load_modules()
 
-        self.administrator_nicknames = []
+        self.administrator_hosts = []
 
-        if administrator_nicknames is not None:
-            for nickname in administrator_nicknames.split(','):
-                self.administrator_nicknames.append(nickname)
+        if administrator_hosts is not None:
+            for nickname in administrator_hosts.split(','):
+                self.administrator_hosts.append(nickname)
 
         self.autojoin_channels = []
 
@@ -87,7 +87,17 @@ class IRCBot(Actor):
             ))
 
     def on_authenticated(self, message):
-        _log.debug('on_authenticated')
+        _log.info('Autojoining...')
+        lines = []
+
+        for channel in self.autojoin_channels:
+            lines.append('JOIN {0}'.format(channel))
+
+        message.reply(
+            directive=u'send',
+            body={
+                'lines': lines
+            })
 
     def import_module(self, name, path):
         module = hy.importer.import_file_to_module(
@@ -145,7 +155,7 @@ class IRCBot(Actor):
         prefix = message.body['prefix']
 
         in_channel = params.middle and params.middle[0] == '#'
-        is_admin = prefix.nick in self.administrator_nicknames
+        is_admin = prefix.host in self.administrator_hosts
 
         context = Context(
             command=command,
@@ -176,7 +186,12 @@ class IRCBot(Actor):
 
     def handle_login(self, message):
         _log.info('Logging in')
-        lines = [
+        lines = []
+
+        if self.password:
+            lines.append('PASS {0}'.format(self.password))
+
+        lines.extend([
             'USER {user} {hostname} {servername} :{realname}'.format(
                         user=self.user,
                         hostname='*',
@@ -184,7 +199,8 @@ class IRCBot(Actor):
                         realname=self.realname
             ),
             'NICK {nick}'.format(nick=self.nick)
-        ]
+        ])
+
 
         message.reply(
             directive='reply',
@@ -280,6 +296,16 @@ def connect():
         level=logging.DEBUG,
         format='%(levelname)08s %(threadName)s %(name)s: %(message)s')
 
+    admin_hosts = os.environ.get('PPNX_ADMIN_HOSTS')
+    autojoin_channels = os.environ.get('PPNX_AUTO_CHANNELS')
+
+    kw = {}
+
+    for name in ['nick', 'user', 'password', 'realname']:
+        value = os.environ.get('PPNX_{0}'.format(name.upper()))
+        if value is not None:
+            kw.update({name: value})
+
     hive = Hive()
 
     hive.create_actor(
@@ -288,7 +314,11 @@ def connect():
             os.path.dirname(__file__),
             '..',
             'modules'),
-        administrator_nicknames='joar,paroneayea')
+        administrator_hosts=admin_hosts,
+        autojoin_channels=autojoin_channels,
+        **kw
+    )
+
     irc_id = hive.create_actor(IRCClient, id='irc', message_handler='bot')
     client_id = hive.create_actor(Client, id='tcp_client',
                                   chunk_handler=irc_id)
