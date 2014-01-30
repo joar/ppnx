@@ -3,13 +3,17 @@
 (make-command-trigger "py")
 
 (defn act [context]
-  (setv -get-module (get-module (second (.split context.params.trailing " " 1))))
-  (print -get-module)
-  (setv (, module right) -get-module)
-  (setv object (get-object module right))
-  (if (is object None)
-    "Not found"
-    (doc-format object)))
+  (try
+    (do
+        (setv
+          (, module right)
+          (get-module (second (.split context.params.trailing " " 1))))
+        (setv object (get-object module right))
+        (if (is object None)
+          "Not found"
+          (doc-format object)))
+    (except [ImportError]
+      "No such module")))
 
 (defn get-object [object rest]
   (if (and object (not rest))
@@ -33,8 +37,10 @@
   (try
     (, (__import__ nom) right)
     (except [ImportError]
-      (let [[(, left foo new-right) (.rpartition nom ".")]]
-        (if right
-          (setv new-right (.join "." [new-right right]))
-          (setv new-right new-right))
-        (get-module left new-right)))))
+      (if (in "." nom)
+        (let [[(, left foo new-right) (.rpartition nom ".")]]
+          (if right
+            (setv new-right (.join "." [new-right right]))
+            (setv new-right new-right))
+          (get-module left new-right))
+        (raise)))))
