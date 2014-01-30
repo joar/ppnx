@@ -1,7 +1,6 @@
-(defn trigger [context]
-  (and
-    context.params.trailing
-    (= (slice context.params.trailing 0 6) "!bring")))
+(require ppnx.lib.hy)
+
+(make-command-trigger "bring")
 
 (defn act [context]
   (setv subject (slice context.params.trailing 7))

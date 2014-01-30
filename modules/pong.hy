@@ -2,4 +2,4 @@
   (= context.command "PING"))
 
 (defn act [context]
-  (, "PONG"))
+  (, "PONG" context.params.trailing))

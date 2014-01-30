@@ -21,6 +21,12 @@ class Context(object):
         for k, v in kw.items():
             setattr(self, k, v)
 
+    def __str__(self):
+        return '<{cls} {0}>'.format(
+            self.__dict__,
+            cls=self.__class__.__name__
+        )
+
 
 class IRCBot(Actor):
     def __init__(self, hive, id,
@@ -325,10 +331,15 @@ def connect():
     client_id = hive.create_actor(Client, id='tcp_client',
                                   chunk_handler=irc_id)
 
+    connect_args = {
+        'host': os.environ.get('PPNX_HOST', 'irc.freenode.net'),
+        'port': int(os.environ.get('PPNX_PORT', 6667))
+    }
+
     hive.send_message(
         to='tcp_client',
         directive='connect',
-        body={'host': 'irc.freenode.net', 'port': 6667})
+        body=connect_args)
 
 
     hive.run()
