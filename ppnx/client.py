@@ -299,6 +299,7 @@ class ModuleChangeWatcher(Actor, pyinotify.ProcessEvent):
 
             yield self.wait_on_self()
 
+
 def connect():
     logging.basicConfig(
         level=logging.DEBUG,
@@ -307,7 +308,9 @@ def connect():
     admin_hosts = os.environ.get('PPNX_ADMIN_HOSTS')
     autojoin_channels = os.environ.get('PPNX_AUTO_CHANNELS')
 
-    kw = {}
+    kw = {
+        'autoreload': bool(int(os.environ.get('PPNX_AUTORELOAD', 0)))
+    }
 
     for name in ['nick', 'user', 'password', 'realname']:
         value = os.environ.get('PPNX_{0}'.format(name.upper()))
